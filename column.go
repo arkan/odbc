@@ -5,6 +5,7 @@
 package odbc
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -121,11 +122,22 @@ func (c *BaseColumn) Name() string {
 	return c.name
 }
 
+func decodeEscapedBytes(input []byte) []byte {
+	var builder bytes.Buffer
+
+	for i := 0; i < len(input); i++ {
+		builder.WriteString(string(input[i]))
+	}
+
+	return builder.Bytes()
+}
+
 func (c *BaseColumn) Value(buf []byte) (driver.Value, error) {
 	var p unsafe.Pointer
 	if len(buf) > 0 {
 		p = unsafe.Pointer(&buf[0])
 	}
+
 	switch c.CType {
 	case api.SQL_C_BIT:
 		return buf[0] != 0, nil
@@ -136,10 +148,10 @@ func (c *BaseColumn) Value(buf []byte) (driver.Value, error) {
 	case api.SQL_C_DOUBLE:
 		return *((*float64)(p)), nil
 	case api.SQL_C_CHAR:
-		return buf, nil
+		return decodeEscapedBytes(buf), nil
 	case api.SQL_C_WCHAR:
 		if p == nil {
-			return buf, nil
+			return decodeEscapedBytes(buf), nil
 		}
 		s := (*[1 << 28]uint16)(p)[: len(buf)/2 : len(buf)/2]
 		return utf16toutf8(s), nil
