@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/alexbrainman/odbc/api"
+	"github.com/alexbrainman/odbc/informix"
 )
 
 type Conn struct {
@@ -79,13 +80,21 @@ func (c *Conn) newError(apiName string, handle interface{}) error {
 // As per the specifications, it honours the context timeout and returns when the context is cancelled.
 // When the context is cancelled, it first cancels the statement, closes it, and then returns an error.
 func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	// Prepare a query
-	os, err := c.PrepareODBCStmt(query)
+	dargs, err := namedValueToValue(args)
+	if err != nil {
+		return nil, err
+	}
+	iargs := make([]interface{}, len(dargs))
+	for i, arg := range dargs {
+		iargs[i] = arg
+	}
+	query, err = informix.InterpolateQuery(query, iargs...)
 	if err != nil {
 		return nil, err
 	}
 
-	dargs, err := namedValueToValue(args)
+	// Prepare a query
+	os, err := c.PrepareODBCStmt(query)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +110,9 @@ func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 		return nil, ctx.Err()
 	}
 
-	go c.wrapQuery(ctx, os, dargs, rowsChan, errorChan)
+	// Execute the statement with the interpolated query and arguments set to nil.
+	// This is because the arguments are already interpolated and passed in the query string.
+	go c.wrapQuery(ctx, os, nil, rowsChan, errorChan)
 
 	var finalErr error
 	var finalRes driver.Rows
